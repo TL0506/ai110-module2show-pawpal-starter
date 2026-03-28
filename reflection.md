@@ -1,6 +1,23 @@
 # PawPal+ Project Reflection
 
 ## 1. System Design
+- Track pet care tasks (walks, feeding, meds, enrichment, grooming, etc.)
+    Create Pet
+        Hold a name for the pet and what breed the pet is/ what it is
+    Today's schedule/Task
+    List of all the time what is occupied in the time and what task it is
+
+    Make them do pet care tasks/schedule -- creates the task/ scheduling the task below
+        walking
+        Feeding
+        meds
+        enrichment
+        gromming
+- Consider constraints (time available, priority, owner preferences)
+    Time avaliable of Owner
+    Priority of pet to take care of first
+    Owner preference of how they want their pet to be taken care of
+- Produce a daily plan and explain why it chose that plan
 
 **a. Initial design**
 
