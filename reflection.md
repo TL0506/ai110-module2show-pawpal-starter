@@ -21,13 +21,31 @@
 
 **a. Initial design**
 
-- Briefly describe your initial UML design.
-- What classes did you include, and what responsibilities did you assign to each?
+The initial design used seven classes organized around an Owner who owns Pets, each Pet holding a list of Tasks, and a Scheduler that produces a DailySchedule.
+
+| Class | Responsibility |
+|---|---|
+| `TaskType` | Enum listing the five care categories (walking, feeding, medication, enrichment, grooming) so task types are never raw strings |
+| `TimeSlot` | Represents one block of the owner's day; tracks whether it is occupied and by what |
+| `Task` | A single care action for a pet — stores the type, how long it takes, and its priority |
+| `Pet` | Holds a pet's identity (name, breed, species) and its numeric priority relative to other pets; owns a list of Tasks |
+| `Owner` | Central user object — stores the owner's name, their free TimeSlots, their care preferences, and the pets they own |
+| `ScheduledTask` | A resolved assignment linking one Task to one Pet and one TimeSlot; also stores a `reasoning` string so the plan can explain itself |
+| `DailySchedule` | The output artifact — an ordered list of ScheduledTasks for a given date, plus a summary printer |
+| `Scheduler` | Orchestrator — reads the Owner's constraints, ranks pets by priority, fits tasks into available TimeSlots, and returns a DailySchedule |
 
 **b. Design changes**
 
-- Did your design change during implementation?
-- If yes, describe at least one change and why you made it.
+Yes, three changes were made after an AI code review of the skeleton.
+
+1. **Added `duration_minutes` property and `can_fit()` to `TimeSlot`.**
+   The original `TimeSlot` stored `start_time` and `end_time` as plain strings but had no way to compute how long the window actually was. Without this, the Scheduler could never check whether a `Task.duration_minutes` would fit inside a slot before assigning it — a logic bottleneck that would have caused incorrect scheduling. The fix parses the two time strings with `datetime.strptime` and exposes both the computed duration and a `can_fit(task_duration)` helper.
+
+2. **Added `unscheduled_tasks` list to `DailySchedule`.**
+   If the owner's day is too full to fit every pet task, the original design had nowhere to put the overflow. Tasks would silently be skipped with no record. Adding `unscheduled_tasks: list[Task]` makes gaps in the plan visible and lets the summary explain what was left out.
+
+3. **Added a `date` parameter to `generate_daily_plan()`.**
+   The original `Scheduler.schedule` defaulted to `DailySchedule(date="")`, meaning the date was never properly set unless the caller remembered to set it manually. The fix makes `date` an explicit parameter of `generate_daily_plan()`, which now creates a fresh `DailySchedule` with the correct date and seeds its timeline directly from `owner.available_time`.
 
 ---
 

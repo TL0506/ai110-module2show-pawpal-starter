@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from typing import Optional
 
@@ -26,8 +27,19 @@ class TimeSlot:
     is_occupied: bool = False
     occupied_by: Optional[str] = None
 
+    @property
+    def duration_minutes(self) -> int:
+        """Compute how many minutes this slot spans from start_time to end_time."""
+        fmt = "%H:%M"
+        delta = datetime.strptime(self.end_time, fmt) - datetime.strptime(self.start_time, fmt)
+        return int(delta.total_seconds() // 60)
+
     def is_available(self) -> bool:
         return not self.is_occupied
+
+    def can_fit(self, task_duration: int) -> bool:
+        """Return True if this slot is free and long enough for the given duration."""
+        return self.is_available() and self.duration_minutes >= task_duration
 
     def block(self, reason: str) -> None:
         self.is_occupied = True
@@ -99,8 +111,9 @@ class ScheduledTask:
 
 @dataclass
 class DailySchedule:
-    date: str                # e.g. "2026-03-28"
+    date: str                          # e.g. "2026-03-28"
     scheduled_tasks: list[ScheduledTask] = field(default_factory=list)
+    unscheduled_tasks: list[Task] = field(default_factory=list)   # tasks that couldn't be fit
     timeline: list[TimeSlot] = field(default_factory=list)
 
     def add_scheduled_task(self, task: ScheduledTask) -> None:
@@ -115,6 +128,10 @@ class DailySchedule:
         lines = [f"Daily plan for {self.date}:"]
         for st in self.scheduled_tasks:
             lines.append(f"  {st.get_details()}")
+        if self.unscheduled_tasks:
+            lines.append("  [Could not schedule:]")
+            for t in self.unscheduled_tasks:
+                lines.append(f"    - {t.get_details()}")
         return "\n".join(lines)
 
 
@@ -127,9 +144,14 @@ class Scheduler:
     owner: Owner
     schedule: DailySchedule = field(default_factory=lambda: DailySchedule(date=""))
 
-    def generate_daily_plan(self) -> DailySchedule:
+    def generate_daily_plan(self, date: str) -> DailySchedule:
+        """Create a fresh schedule for the given date and populate it."""
+        self.schedule = DailySchedule(
+            date=date,
+            timeline=list(self.owner.available_time),  # seed timeline from owner's free slots
+        )
         # TODO: implement scheduling logic
-        pass
+        return self.schedule
 
     def apply_constraints(self) -> None:
         # TODO: filter available time slots against owner's occupied times
