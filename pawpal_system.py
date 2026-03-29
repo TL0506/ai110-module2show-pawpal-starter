@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Optional
 
@@ -24,6 +24,13 @@ class Frequency(Enum):
 
 
 PRIORITY_ORDER = {"high": 1, "medium": 2, "low": 3}
+
+# How many days ahead each frequency recurs
+_RECUR_DAYS = {
+    Frequency.DAILY:       1,
+    Frequency.TWICE_DAILY: 1,
+    Frequency.WEEKLY:      7,
+}
 
 
 # -------------------------------------------------------------------
@@ -70,6 +77,7 @@ class Task:
     priority: str             # "high" | "medium" | "low"
     frequency: Frequency = Frequency.DAILY
     is_completed: bool = False
+    due_date: Optional[str] = None   # "YYYY-MM-DD" — set when task is created or recurred
 
     # ------ state management ------
 
@@ -91,10 +99,11 @@ class Task:
     def get_details(self) -> str:
         """Return a single-line summary of this task's type, duration, priority, and status."""
         status = "done" if self.is_completed else "pending"
+        due = f" | due {self.due_date}" if self.due_date else ""
         return (
             f"{self.task_type.value} | \"{self.description}\" | "
             f"{self.duration_minutes} min | {self.priority} priority | "
-            f"{self.frequency.value} | {status}"
+            f"{self.frequency.value}{due} | {status}"
         )
 
 
@@ -310,7 +319,7 @@ class Scheduler:
         for pet in self.owner.pets:
             pet.reset_daily_tasks()
 
-        # Step 2 — seed timeline from owner's free slots (shallow copies so blocking works)
+        # Step 2 — seed timeline from owner's free slots (copies so blocking is isolated)
         free_slots = [
             TimeSlot(s.start_time, s.end_time, s.is_occupied, s.occupied_by)
             for s in self.owner.available_time
@@ -333,6 +342,72 @@ class Scheduler:
                     self.schedule.add_unscheduled(pet, task)
 
         return self.schedule
+
+    # ------ sorting ------
+
+    def sort_by_time(self) -> list[ScheduledTask]:
+        """Return scheduled tasks sorted chronologically by their start time (HH:MM)."""
+        return sorted(
+            self.schedule.scheduled_tasks,
+            key=lambda st: datetime.strptime(st.time_slot.start_time, "%H:%M"),
+        )
+
+    # ------ filtering ------
+
+    def filter_tasks(
+        self,
+        completed: Optional[bool] = None,
+        pet_name: Optional[str] = None,
+    ) -> list[tuple[Pet, Task]]:
+        """
+        Filter all tasks across every pet by completion status and/or pet name.
+
+        Parameters
+        ----------
+        completed : True  → only done tasks
+                    False → only pending tasks
+                    None  → all tasks (no filter)
+        pet_name  : restrict results to a single named pet; None means all pets
+        """
+        pairs = self.owner.get_all_tasks()
+        if pet_name is not None:
+            pairs = [(p, t) for p, t in pairs if p.name == pet_name]
+        if completed is not None:
+            pairs = [(p, t) for p, t in pairs if t.is_completed == completed]
+        return pairs
+
+    # ------ conflict detection ------
+
+    def detect_conflicts(self) -> list[str]:
+        """
+        Check the current schedule for overlapping time slots.
+
+        Two scheduled tasks conflict when their time windows overlap:
+            task_a.start < task_b.end  AND  task_b.start < task_a.end
+
+        Returns a list of human-readable warning strings (empty if no conflicts).
+        This is intentionally a warning rather than an exception so the
+        caller can decide how to handle it.
+        """
+        fmt = "%H:%M"
+        warnings: list[str] = []
+        entries = self.schedule.scheduled_tasks
+
+        for i, a in enumerate(entries):
+            for b in entries[i + 1:]:
+                a_start = datetime.strptime(a.time_slot.start_time, fmt)
+                a_end   = datetime.strptime(a.time_slot.end_time,   fmt)
+                b_start = datetime.strptime(b.time_slot.start_time, fmt)
+                b_end   = datetime.strptime(b.time_slot.end_time,   fmt)
+
+                if a_start < b_end and b_start < a_end:
+                    warnings.append(
+                        f"⚠  CONFLICT: {a.pet.name}/{a.task.task_type.value} "
+                        f"[{a.time_slot.start_time}–{a.time_slot.end_time}] overlaps "
+                        f"{b.pet.name}/{b.task.task_type.value} "
+                        f"[{b.time_slot.start_time}–{b.time_slot.end_time}]"
+                    )
+        return warnings
 
     # ------ constraint helpers ------
 
@@ -362,7 +437,38 @@ class Scheduler:
             reasons.append("medication is time-sensitive")
         return "; ".join(reasons)
 
-    # ------ query methods ------
+    # ------ recurring task helpers ------
+
+    def _spawn_next_occurrence(self, pet: Pet, completed_task: Task) -> None:
+        """
+        After a recurring task is marked complete, add its next occurrence to the pet.
+
+        Uses timedelta to calculate the next due date:
+          daily / twice_daily → today + 1 day
+          weekly              → today + 7 days
+          as_needed           → no automatic recurrence
+        """
+        days = _RECUR_DAYS.get(completed_task.frequency)
+        if days is None:
+            return  # AS_NEEDED — do not auto-schedule
+
+        base = (
+            datetime.strptime(completed_task.due_date, "%Y-%m-%d")
+            if completed_task.due_date
+            else datetime.today()
+        )
+        next_due = (base + timedelta(days=days)).strftime("%Y-%m-%d")
+
+        pet.add_task(Task(
+            task_type=completed_task.task_type,
+            description=completed_task.description,
+            duration_minutes=completed_task.duration_minutes,
+            priority=completed_task.priority,
+            frequency=completed_task.frequency,
+            due_date=next_due,
+        ))
+
+    # ------ query / mutation methods ------
 
     def get_all_tasks(self) -> list[tuple[Pet, Task]]:
         """All (pet, task) pairs across every pet the owner has."""
@@ -378,7 +484,10 @@ class Scheduler:
 
     def mark_task_complete(self, pet_name: str, task_type: TaskType) -> bool:
         """
-        Mark the first matching pending task as complete.
+        Mark the first matching pending task complete and spawn its next occurrence.
+
+        For daily / twice_daily / weekly tasks, a new Task is automatically added
+        to the pet with a due_date calculated via timedelta from today.
         Returns True if a task was found and marked, False otherwise.
         """
         pet = self.owner.get_pet(pet_name)
@@ -387,6 +496,7 @@ class Scheduler:
         for task in pet.get_tasks_by_type(task_type):
             if not task.is_completed:
                 task.complete()
+                self._spawn_next_occurrence(pet, task)
                 return True
         return False
 

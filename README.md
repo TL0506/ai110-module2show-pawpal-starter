@@ -32,6 +32,17 @@ source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+## Smarter Scheduling
+
+Beyond the basic daily plan, the scheduler includes four algorithmic features:
+
+| Feature | Method | What it does |
+|---|---|---|
+| **Sort by time** | `Scheduler.sort_by_time()` | Returns scheduled tasks in chronological order using a `lambda` key with `datetime.strptime` on `HH:MM` strings |
+| **Filter tasks** | `Scheduler.filter_tasks(completed, pet_name)` | Filters all `(Pet, Task)` pairs by completion status and/or pet name |
+| **Recurring tasks** | `Scheduler.mark_task_complete()` + `_spawn_next_occurrence()` | When a `daily` or `weekly` task is marked done, a new instance is automatically added with a `due_date` calculated using Python's `timedelta` (daily → +1 day, weekly → +7 days) |
+| **Conflict detection** | `Scheduler.detect_conflicts()` | Checks every pair of scheduled tasks for overlapping windows using the interval overlap test (`a.start < b.end AND b.start < a.end`); returns human-readable warning strings instead of crashing |
+
 ### Suggested workflow
 
 1. Read the scenario carefully and identify requirements and edge cases.

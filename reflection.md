@@ -53,13 +53,19 @@ Yes, three changes were made after an AI code review of the skeleton.
 
 **a. Constraints and priorities**
 
-- What constraints does your scheduler consider (for example: time, priority, preferences)?
-- How did you decide which constraints mattered most?
+The scheduler considers three constraints in this order:
+
+1. **Pet priority** — pets with a lower `priority` number are served first. A dog that needs medication is more critical than a cat that needs enrichment, and that should be reflected in who gets the first available slot.
+2. **Task priority** — within each pet, tasks ranked `high` (medication, feeding) are placed before `medium` (walking) and `low` (grooming).
+3. **Owner's available time** — tasks are only placed in `TimeSlot`s that are free and wide enough (`can_fit()`). Slots that are too short are skipped; tasks that find no slot land in `unscheduled_tasks`.
+
+Pet priority was chosen as the outermost constraint because a pet's overall welfare matters more than any individual task ordering. Within a pet, task priority matters because missing medication is worse than skipping a grooming session.
 
 **b. Tradeoffs**
 
-- Describe one tradeoff your scheduler makes.
-- Why is that tradeoff reasonable for this scenario?
+The scheduler uses a **first-fit strategy**: it assigns each task to the first available slot that is long enough, without looking ahead to see if a later slot would allow more tasks to fit overall. This means a 30-minute walk can consume a large morning slot, leaving no room for a 5-minute medication that could have been placed there instead.
+
+This tradeoff is reasonable for a daily pet-care scenario because correctness and simplicity matter more than slot utilisation. A pet owner doesn't need an optimal bin-packing solution — they need a clear, predictable plan that always schedules the highest-priority tasks first and transparently lists anything it couldn't fit. A look-ahead or backtracking algorithm would be harder to explain and debug without meaningfully improving real-world outcomes.
 
 ---
 
