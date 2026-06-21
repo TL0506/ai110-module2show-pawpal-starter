@@ -37,7 +37,7 @@
 
 ## 📸 Demo
 
-<a href="/course_images/ai110/demo.png" target="_blank"><img src='/course_images/ai110/demo.png' title='PawPal App' width='' alt='PawPal App' class='center-block' /></a>
+![PawPal App](demo.png)
 
 ---
 
